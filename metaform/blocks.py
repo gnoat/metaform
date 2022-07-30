@@ -87,12 +87,15 @@ class Block:
         property_params = []
         for k, v in self.properties.items():
             if isinstance(v, Block):
-                property_params.append(v._write(pad=pad + 1))
                 self._add_dependencies(v)
+            elif isinstance(v, Caller):
+                self._add_dependencies(v.base)
+            if isinstance(v, Block):
+                property_params.append(v._write(pad=pad + 1))
             else:
                 base_string = f"{self._tab_space}{k}{' ' * (max_len - len(k))} = "
                 if isinstance(v, dict):
-                    map_rep = self._map_rep()
+                    map_rep = self._map_rep(v)
                     basic_params.append(base_string + map_rep[0])
                     basic_params += list(
                         map(lambda b: len(base_string) * " " + b, map_rep[1:])
@@ -148,6 +151,6 @@ class Block:
             )
 
     def _add_dependencies(self, v: Block):
-        if v._group in {_VARIABLE, _DATA, _MODULE, _RESOURCE, _OUTPUT}:
-            print("adding v", v, v._group)
-            self.dependencies.add(v)
+        for sub in [v] + list(v.dependencies):
+            if sub._group in [_VARIABLE, _DATA, _MODULE, _RESOURCE, _OUTPUT]:
+                self.dependencies.add(v)
