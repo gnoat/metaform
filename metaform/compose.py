@@ -1,5 +1,25 @@
 from blocks import Block, BlockError
-from typing import Union
+from typing import Union, Optional
+import functools
+
+
+class DependencyError(Exception):
+    """
+    Exception to return due to issues resolving dependencies
+    """
+
+
+def resolve_dependencies(dependency_map: dict[str, set[str]], base_layer: set[str] = set()) -> list[set[str]]:
+    layers = []
+    total_blocks = set(dependency_map.keys())
+    while base_layer != total_blocks:
+        next_layer = set(block for block in dependency_map if dependency_map[block].issubset(base_layer))
+        current_layer = next_layer - base_layer
+        layers.append(current_layer)
+        base_layer = next_layer
+        if not current_layer:
+            raise DependencyError("Unable to resolve dependencies, ensure they are consistent and non-circular.")
+    return layers
 
 
 class Registry(dict):
@@ -37,8 +57,6 @@ class UnitMixin:
 
     def _update_tracking_and_return(self, new_block: Block):
         self.blocks[str(new_block)] = new_block
-        print("Current registry:", self.registry)
-        print("Adding block", new_block)
         if (str(new_block) not in self.registry) or self._ignore_duplicates:
             self.registry[str(new_block)] = new_block
         else:
@@ -57,7 +75,7 @@ class Group(UnitMixin):
         self,
         _type: str,
         _id: str,
-        **kwargs: Union[str, int, float, Block, bool, list, dict],
+        **kwargs: Optional[Union[str, int, float, Block, bool, list, dict]],
     ) -> Block:
         new_block = Block(_id, _type, self.group, **kwargs)
         return self._update_tracking_and_return(new_block)
@@ -74,14 +92,12 @@ class Micros(UnitMixin):
     def __call__(
         self,
         _id: str,
-        property_blocks: list[Block] = [],
-        **kwargs: Union[str, int, float, Block, bool],
+        **kwargs: Optional[Union[str, int, float, Block, bool]],
     ) -> Block:
         new_block = Block(
             _id,
             self.with_quotes,
             self.without_quotes,
-            property_blocks=property_blocks,
             **kwargs,
         )
         return self._update_tracking_and_return(new_block)
@@ -92,14 +108,14 @@ class Properties(UnitMixin):
         super().__init__(registry)
 
     def __call__(
-        self, _id: str, **kwargs: Union[str, int, float, Block, bool, list, dict]
+        self, _id: str, **kwargs: Optional[Union[str, int, float, Block, bool, list, dict]]
     ):
         new_prop = Block("", "", _id, **kwargs)
         return self._update_tracking_and_return(new_prop)
 
 
 class MetaFormer:
-    def __init__(self, registry: Union[Registry, None] = None):
+    def __init__(self, registry: Optional[Registry] = None):
         if registry is not None:
             self.registry = registry
         else:
@@ -124,3 +140,13 @@ class MetaFormer:
     def _clear_registry(self):
         self.registry = Registry()
         return self
+    
+    def _collect_dependencies(self) -> dict[str, list[str]]:
+        return {block_id: [str(dep_block) for dep_block in block.dependencies] for block_id, block in self.registry}
+    
+    def _resolve_dependencies(self) -> list[list[str]]:
+        return resolve_dependencies(self._collect_dependencies())
+    
+    def _order_dependencies(self) -> list[Block]:
+        dependencies = self._resolve_dependencies()
+

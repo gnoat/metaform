@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, Union
+from typing import Any, Union, Optional
 
 
 class BlockError(Exception):
@@ -14,7 +14,7 @@ class Caller:
         self.call = call
 
     def __str__(self) -> str:
-        return f"{str(self.base)}.{str(self.call)}"
+        return f"{str(self.base)}.{self.call}"
 
     def __repr__(self) -> str:
         return self.__str__()
@@ -29,18 +29,15 @@ class Block:
         _id: str = "",
         _type: str = "",
         _group: str = "",
-        property_blocks: list[Block] = [],
-        **kwargs: Union[str, int, float, Block, bool, list, dict],
+        **kwargs: Optional[Union[str, int, float, Block, bool, list, dict]],
     ):
         self.id = _id
         self.type = _type
         self.properties = kwargs
         self.group = _group
-        self.property_blocks = [
-            block for block in property_blocks if isinstance(block, Block)
-        ]
         self.group_prefix, self.type_prefix = self._prefix_parse()
-        self.dependencies = []
+        self.dependencies = set()
+        self._format_props() # needs to run on start to capture all dependencies
 
     def _prefix_parse(self) -> tuple[str, str]:
         group_prefix = ""
@@ -79,6 +76,7 @@ class Block:
         property_params = []
         for k, v in self.properties.items():
             if isinstance(v, Block):
+                self.dependencies.add(v)
                 property_params.append(v._write(pad=pad + 1))
             else:
                 base_string = f"{self.tab_space}{k}{' ' * (max_len - len(k))} = "
@@ -105,9 +103,9 @@ class Block:
     def __repr__(self) -> str:
         return f"{self.group_prefix}{self.type_prefix}{self.id}"
 
-    def _parse(self, s: str) -> str:
+    def _parse(self, s: Union[Caller, int, float, str, bool]) -> str:
         if isinstance(s, Caller):
-            self.dependencies.append(s.base)
+            self.dependencies.add(s.base)
             return str(s)
         elif isinstance(s, int or float):
             return str(s)
@@ -117,15 +115,17 @@ class Block:
             return f'"{s}"'
 
     def __getitem__(self, attribute: str) -> str:
-        return Caller(self.__str__(), attribute)
+        return Caller(self, attribute)
 
     def _map_rep(self, d: dict, pad=0, tomap=True, max_elements=4) -> list[str]:
+        dummy_block = Block("", "", "", **d)
+        self.dependencies.union(dummy_block.dependencies)
         if tomap:
-            base = Block("", "", "", **d)._format_props(pad=pad + 6)
+            base = dummy_block._format_props(pad=pad + 6)
             base[0] = "tomap(" + base[0]
             base[-1] = base[-1] + ")"
         else:
-            base = Block("", "", "", **d)._format_props(pad=pad)
+            base = dummy_block._format_props(pad=pad)
         if len(base) < max_elements:
             base = [base[0] + ",".join(base[1:-1]) + base[-1]]
         return base
