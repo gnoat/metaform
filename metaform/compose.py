@@ -1,4 +1,4 @@
-from blocks import Block, BlockError
+from blocks import Block, BlockError, _GROUPS
 from typing import Union, Optional
 import functools
 
@@ -9,16 +9,24 @@ class DependencyError(Exception):
     """
 
 
-def resolve_dependencies(dependency_map: dict[str, set[str]], base_layer: set[str] = set()) -> list[set[str]]:
+def resolve_dependencies(
+    dependency_map: dict[str, set[str]], base_layer: set[str] = set()
+) -> list[set[str]]:
     layers = []
     total_blocks = set(dependency_map.keys())
     while base_layer != total_blocks:
-        next_layer = set(block for block in dependency_map if dependency_map[block].issubset(base_layer))
+        next_layer = set(
+            block
+            for block in dependency_map
+            if dependency_map[block].issubset(base_layer)
+        )
         current_layer = next_layer - base_layer
         layers.append(current_layer)
         base_layer = next_layer
         if not current_layer:
-            raise DependencyError("Unable to resolve dependencies, ensure they are consistent and non-circular.")
+            raise DependencyError(
+                "Unable to resolve dependencies, ensure they are consistent and non-circular."
+            )
     return layers
 
 
@@ -45,10 +53,11 @@ class Registry(dict):
         return self.__str__()
 
 
-class UnitMixin:
+class Group:
     _ignore_duplicates = False
 
-    def __init__(self, registry: Registry):
+    def __init__(self, group: str, registry: Registry):
+        self.group = group
         self.registry = registry
         self.blocks = {}
 
@@ -65,53 +74,13 @@ class UnitMixin:
             )
         return new_block
 
-
-class Group(UnitMixin):
-    def __init__(self, registry: Registry, group: str):
-        super().__init__(registry)
-        self.group = group
-
     def __call__(
         self,
-        _type: str,
-        _id: str,
+        *ids,
         **kwargs: Optional[Union[str, int, float, Block, bool, list, dict]],
     ) -> Block:
-        new_block = Block(_id, _type, self.group, **kwargs)
+        new_block = Block(self.group, *ids, **kwargs)
         return self._update_tracking_and_return(new_block)
-
-
-class Micros(UnitMixin):
-    def __init__(
-        self, registry: Registry, _without_quotes: str = "", _with_quotes: str = ""
-    ):
-        super().__init__(registry)
-        self.with_quotes = _with_quotes
-        self.without_quotes = _without_quotes
-
-    def __call__(
-        self,
-        _id: str,
-        **kwargs: Optional[Union[str, int, float, Block, bool]],
-    ) -> Block:
-        new_block = Block(
-            _id,
-            self.with_quotes,
-            self.without_quotes,
-            **kwargs,
-        )
-        return self._update_tracking_and_return(new_block)
-
-
-class Properties(UnitMixin):
-    def __init__(self, registry: Registry):
-        super().__init__(registry)
-
-    def __call__(
-        self, _id: str, **kwargs: Optional[Union[str, int, float, Block, bool, list, dict]]
-    ):
-        new_prop = Block("", "", _id, **kwargs)
-        return self._update_tracking_and_return(new_prop)
 
 
 class MetaFormer:
@@ -130,23 +99,32 @@ class MetaFormer:
         self.pro = self.property
 
     def _create_groups(self):
-        self.data = Group(self.registry, "data")
-        self.resource = Group(self.registry, "resource")
-        self.module = Micros(self.registry, "module", "")
-        self.variable = Micros(self.registry, "variable", "")
-        self.property = Properties(self.registry)
+        self.data = Group("data", self.registry)
+        self.resource = Group("resource", self.registry)
+        self.module = Group("module", self.registry)
+        self.variable = Group("variable", self.registry)
+        self.property = Group("property", self.registry)
+        self.output = Group("output", self.registry)
         return self
 
     def _clear_registry(self):
         self.registry = Registry()
         return self
-    
+
     def _collect_dependencies(self) -> dict[str, list[str]]:
-        return {block_id: [str(dep_block) for dep_block in block.dependencies] for block_id, block in self.registry}
-    
-    def _resolve_dependencies(self) -> list[list[str]]:
+        return {
+            block_id: {str(dep_block) for dep_block in block.dependencies}
+            for block_id, block in self.registry.items()
+        }
+
+    def _resolve_dependencies(self) -> list[set[str]]:
         return resolve_dependencies(self._collect_dependencies())
-    
+
     def _order_dependencies(self) -> list[Block]:
         dependencies = self._resolve_dependencies()
-
+        return [
+            self.registry[block_id]
+            for block_id in functools.reduce(
+                lambda m, n: list(m) + list(n), dependencies, []
+            )
+        ]
