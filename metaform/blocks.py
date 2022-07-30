@@ -148,8 +148,6 @@ class Block:
             )
 
     def _add_dependencies(self, v: Block):
-        print("checking dependencies for:", v, v.dependencies, v.dependencies, set(v).union(v.dependencies))
-        for sub_dependency in set(v).union(v.dependencies):
-            if sub_dependency in {_VARIABLE, _DATA, _MODULE, _RESOURCE, _OUTPUT}:
-                print("dependency being added:", sub_dependency)
-                self.dependencies.add(sub_dependency)
+        if v._group in {_VARIABLE, _DATA, _MODULE, _RESOURCE, _OUTPUT}:
+            print("adding v", v, v._group)
+            self.dependencies.add(v)

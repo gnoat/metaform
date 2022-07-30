@@ -95,6 +95,7 @@ def test_meta_former_registry(tf):
         host=host["name"],
         token=token["name"],
     )
+    print(tf._order_dependencies())
     assert set(tf.registry) == {
         "data.aws_ssm_parameter.dbrx_host",
         "data.aws_ssm_parameter.dbrx_token",
