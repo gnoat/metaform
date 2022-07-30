@@ -1,5 +1,24 @@
 from __future__ import annotations
-from typing import Any, Union
+from typing import Any, Union, Optional, Literal
+
+
+_VARIABLE = "variable"
+_DATA = "data"
+_MODULE = "module"
+_RESOURCE = "resource"
+_PROPERTY = "property"
+_MAP = "map"
+_OUTPUT = "output"
+_GROUP_VALENCE = {
+    _VARIABLE: 1,
+    _DATA: 2,
+    _MODULE: 1,
+    _RESOURCE: 2,
+    _PROPERTY: 1,
+    _MAP: 0,
+    _OUTPUT: 1,
+}
+_GROUPS = list(_GROUP_VALENCE.keys())
 
 
 class BlockError(Exception):
@@ -14,61 +33,50 @@ class Caller:
         self.call = call
 
     def __str__(self) -> str:
-        return f"{str(self.base)}.{str(self.call)}"
+        return f"{str(self.base)}.{self.call}"
 
     def __repr__(self) -> str:
         return self.__str__()
 
 
 class Block:
-    tab_space = "    "
-    _prefix_map = {"variable": "var"}
+    _tab_space = "    "
+    _group_abbrv = {_VARIABLE: "var", _MAP: ""}
 
     def __init__(
         self,
-        _id: str = "",
-        _type: str = "",
-        _group: str = "",
-        property_blocks: list[Block] = [],
+        _group: str,
+        *args: str,
         **kwargs: Union[str, int, float, Block, bool, list, dict],
     ):
-        self.id = _id
-        self.type = _type
+        self._group = _group
+        self.group, self.group_abbrv, self.ids = self._group_id_reprs(_group, args)
         self.properties = kwargs
-        self.group = _group
-        self.property_blocks = [
-            block for block in property_blocks if isinstance(block, Block)
-        ]
-        self.group_prefix, self.type_prefix = self._prefix_parse()
-        self.dependencies = []
+        self._max_elements = 4
+        self._tomap = True
+        self.dependencies = set()
+        self._format_props()  # needs to run on start to capture all dependencies
 
-    def _prefix_parse(self) -> tuple[str, str]:
-        group_prefix = ""
-        type_prefix = ""
-        adjusted_group = self._prefix_map.get(self.group, self.group)
-        if self.type and self.id:
-            type_prefix = self.type + "."
-            if adjusted_group:
-                group_prefix = adjusted_group + "."
-        elif self.type and not self.id:
-            type_prefix = self.type
-        elif not self.type and not self.id:
-            group_prefix = adjusted_group
-        return group_prefix, type_prefix
+    def _group_id_reprs(self, s: str, ids: tuple[str]) -> tuple[str, str, tuple[str]]:
+        if (s == _MAP) and not ids:
+            return "", "", ids
+        elif s == _PROPERTY:
+            return ids[0], ids[0], ids[1:]
+        else:
+            return s, self._group_abbrv.get(s, s), ids
+
+    def _write_ids(self) -> str:
+        return " ".join([self.group] + [f'"{id}"' for id in self.ids]).strip() + " "
 
     def _write(self, comment: str = "", pad: int = 0) -> str:
         """
         Creates a string block that translates Block to Terraform
         """
         lines = [f"#{comment}"] if comment else []
-        opening_type = "" if (not self.type) else f' "{self.type}"'
-        opening_group = "" if (not self.group) else f"{self.group}"
-        opening_id = "" if (not self.id) else f' "{self.id}"'
-        opener = f"{opening_group}{opening_type}{opening_id}"
-        lines.append(opener + (" " if len(opener) else "") + "{")
+        lines.append(self._write_ids() + "{")
         lines += self._format_props(pad)
         lines.append("}")
-        return "\n".join(map(lambda s: pad * self.tab_space + s, lines))
+        return "\n".join(map(lambda s: pad * self._tab_space + s, lines))
 
     def _format_props(self, pad: int = 0) -> list[str]:
         """
@@ -79,11 +87,15 @@ class Block:
         property_params = []
         for k, v in self.properties.items():
             if isinstance(v, Block):
+                self._add_dependencies(v)
+            elif isinstance(v, Caller):
+                self._add_dependencies(v.base)
+            if isinstance(v, Block):
                 property_params.append(v._write(pad=pad + 1))
             else:
-                base_string = f"{self.tab_space}{k}{' ' * (max_len - len(k))} = "
+                base_string = f"{self._tab_space}{k}{' ' * (max_len - len(k))} = "
                 if isinstance(v, dict):
-                    map_rep = self._map_rep()
+                    map_rep = self._map_rep(v)
                     basic_params.append(base_string + map_rep[0])
                     basic_params += list(
                         map(lambda b: len(base_string) * " " + b, map_rep[1:])
@@ -103,11 +115,10 @@ class Block:
         return self.__repr__()
 
     def __repr__(self) -> str:
-        return f"{self.group_prefix}{self.type_prefix}{self.id}"
+        return ".".join([self.group_abbrv] + list(self.ids)).strip(".")
 
-    def _parse(self, s: str) -> str:
+    def _parse(self, s: Union[Caller, int, float, str, bool]) -> str:
         if isinstance(s, Caller):
-            self.dependencies.append(s.base)
             return str(s)
         elif isinstance(s, int or float):
             return str(s)
@@ -117,19 +128,29 @@ class Block:
             return f'"{s}"'
 
     def __getitem__(self, attribute: str) -> str:
-        return Caller(self.__str__(), attribute)
+        return Caller(self, attribute)
 
-    def _map_rep(self, d: dict, pad=0, tomap=True, max_elements=4) -> list[str]:
-        if tomap:
-            base = Block("", "", "", **d)._format_props(pad=pad + 6)
+    def _map_rep(self, d: dict, pad=0) -> list[str]:
+        dummy_block = Block(_MAP, **d)
+        if self._tomap:
+            base = dummy_block._format_props(pad=pad + 6)
             base[0] = "tomap(" + base[0]
             base[-1] = base[-1] + ")"
         else:
-            base = Block("", "", "", **d)._format_props(pad=pad)
-        if len(base) < max_elements:
+            base = dummy_block._format_props(pad=pad)
+        if len(base) < self._max_elements:
             base = [base[0] + ",".join(base[1:-1]) + base[-1]]
         return base
 
     def _validate(self):
         # TODO: Validate new blocks exist and have all required properties
-        return True
+        group_valence = _GROUP_VALENCE.get(self._group, len(self.ids))
+        if group_valence != len(self.ids):
+            raise BlockError(
+                f'Group "{self._group}" requires valence {group_valence}, but got {len(self.ids)}.'
+            )
+
+    def _add_dependencies(self, v: Block):
+        for sub in [v] + list(v.dependencies):
+            if sub._group in [_VARIABLE, _DATA, _MODULE, _RESOURCE, _OUTPUT]:
+                self.dependencies.add(v)

@@ -1,3 +1,6 @@
+import pytest
+
+
 def test_data(tf):
     token = tf.data("aws_ssm_parameter", "token", name="workspace-token", path="/keys/")
     assert str(token) == "data.aws_ssm_parameter.token"
@@ -54,7 +57,7 @@ def test_module(tf):
         test._write()
         == 'module "generic_resources" {\n    source = "./generic_module"\n}'
     )
-    assert str(test) == "generic_resources"
+    assert str(test) == "module.generic_resources"
 
 
 def test_stacking_blocks(tf):
@@ -98,3 +101,47 @@ def test_meta_former_registry(tf):
         "library",
         "resource.databricks_job.dbrx_job",
     }
+
+
+def test_resolve_dependencies(compose):
+    valid_deps = {
+        "a": {"b"},
+        "b": {"c", "d"},
+        "c": set(),
+        "d": {"e"},
+        "e": {"f"},
+        "f": set(),
+    }
+    assert compose.resolve_dependencies(valid_deps) == [
+        {"f", "c"},
+        {"e"},
+        {"d"},
+        {"b"},
+        {"a"},
+    ]
+
+    self_ref_deps = {
+        "a": {"b"},
+        "b": {"c", "d"},
+        "c": set(),
+        "d": {"e"},
+        "e": {"f"},
+        "f": {"f"},
+    }
+    with pytest.raises(compose.DependencyError):
+        _ = compose.resolve_dependencies(self_ref_deps)
+
+    circular_deps = {
+        "a": {"b"},
+        "b": {"c", "d"},
+        "c": set(),
+        "d": {"e"},
+        "e": {"f"},
+        "f": {"d"},
+    }
+    with pytest.raises(compose.DependencyError):
+        _ = compose.resolve_dependencies(circular_deps)
+
+    missing_deps = {"a": {"b"}, "b": {"c", "d"}, "c": set(), "e": {"f"}, "f": {"d"}}
+    with pytest.raises(compose.DependencyError):
+        _ = compose.resolve_dependencies(missing_deps)
