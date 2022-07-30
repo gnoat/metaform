@@ -1,4 +1,14 @@
-from blocks import Block, BlockError, _GROUPS
+from blocks import (
+    Block,
+    BlockError,
+    _GROUPS,
+    _VARIABLE,
+    _DATA,
+    _MODULE,
+    _RESOURCE,
+    _OUTPUT,
+    _PROPERTY
+)
 from typing import Union, Optional
 import functools
 
@@ -115,16 +125,34 @@ class MetaFormer:
         return {
             block_id: {str(dep_block) for dep_block in block.dependencies}
             for block_id, block in self.registry.items()
+            if block._group != _PROPERTY
         }
 
     def _resolve_dependencies(self) -> list[set[str]]:
         return resolve_dependencies(self._collect_dependencies())
 
-    def _order_dependencies(self) -> list[Block]:
+    def collect(self) -> list[Block]:
         dependencies = self._resolve_dependencies()
-        return [
-            self.registry[block_id]
-            for block_id in functools.reduce(
-                lambda m, n: list(m) + list(n), dependencies, []
+        return functools.reduce(
+            lambda m, n: self._sort(m) + self._sort(n), dependencies, []
+        )
+
+    def _sort(self, deps: set[str]) -> list[Block]:
+        deps = [self.registry[str(block_id)] for block_id in deps]
+        return (
+            list(filter(lambda b: b._group == _VARIABLE, deps))
+            + list(filter(lambda b: b._group == _DATA, deps))
+            + list(filter(lambda b: b._group == _RESOURCE, deps))
+            + list(filter(lambda b: b._group == _MODULE, deps))
+            + list(filter(lambda b: b._group == _OUTPUT, deps))
+            + list(
+                filter(
+                    lambda b: b._group
+                    not in [_VARIABLE, _DATA, _RESOURCE, _MODULE, _OUTPUT],
+                    deps,
+                )
             )
-        ]
+        )
+
+    def _write(self):
+        return "\n\n".join(block._write() for block in self.collect())

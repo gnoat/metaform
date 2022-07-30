@@ -81,7 +81,7 @@ def test_stacking_blocks(tf):
     )
 
 
-def test_meta_former_registry(tf):
+def test_metaformer_registry(tf):
     host = tf.data("aws_ssm_parameter", "dbrx_host", name="dbrx_host")
     token = tf.data(
         "aws_ssm_parameter", "dbrx_token", name="dbrx_token", path=host["name"]
@@ -101,6 +101,7 @@ def test_meta_former_registry(tf):
         "library",
         "resource.databricks_job.dbrx_job",
     }
+    assert tf.collect() == [host, token, job]
 
 
 def test_resolve_dependencies(compose):
