@@ -7,10 +7,13 @@ from blocks import (
     _MODULE,
     _RESOURCE,
     _OUTPUT,
-    _PROPERTY
+    _PROPERTY,
 )
 from typing import Union, Optional
 import functools
+import os
+from argparse import ArgumentParser
+from __main__ import __file__ as __script_path__
 
 
 class DependencyError(Exception):
@@ -94,12 +97,30 @@ class Group:
 
 
 class MetaFormer:
-    def __init__(self, registry: Optional[Registry] = None):
+    def __init__(
+        self,
+        registry: Optional[Registry] = None,
+        default_name: Optional[str] = None,
+        default_isolate: bool = False,
+        default_split_out: bool = False,
+    ):
         if registry is not None:
             self.registry = registry
         else:
             self.registry = Registry()
         self._create_groups()
+        self._mf_dir = os.path.dirname(__script_path__)
+        self._mf_path = os.path.realpath(__script_path__)
+        self._default_name_arg = (
+            default_name
+            if default_name
+            else os.path.basename(self._mf_path).split(".")[0]
+        )
+        self._default_isolate_arg = "store_false" if default_isolate else "store_true"
+        self._default_split_out_arg = (
+            "store_false" if default_split_out else "store_true"
+        )
+        self._mf_args = self._parse_options()
 
         # shortened aliases
         self.dat = self.data
@@ -107,6 +128,14 @@ class MetaFormer:
         self.mod = self.module
         self.var = self.variable
         self.pro = self.property
+
+    def _parse_options(self):
+        parser = ArgumentParser()
+        parser.add_argument("--name", "-n", type=str, default=self._default_name_arg)
+        parser.add_argument("--isolate", "-i", action=self._default_isolate_arg)
+        parser.add_argument("--split_out", "-s", action=self._default_split_out_arg)
+        args = parser.parse_args()
+        return args
 
     def _create_groups(self):
         self.data = Group("data", self.registry)
@@ -138,6 +167,10 @@ class MetaFormer:
         )
 
     def _sort(self, deps: set[str]) -> list[Block]:
+        """
+        Sort the dependencies putting in the following order:
+            VARIABLES -> DATA -> RESOURCES -> MODULES -> OUTPUTS
+        """
         deps = [self.registry[str(block_id)] for block_id in deps]
         return (
             list(filter(lambda b: b._group == _VARIABLE, deps))
@@ -155,4 +188,20 @@ class MetaFormer:
         )
 
     def _write(self):
+        """
+        Return the contents of the MetaForm object as a string
+        """
         return "\n\n".join(block._write() for block in self.collect())
+
+    def build(self):
+        """
+        Build out the new terraform scripts from the metaform commands
+        """
+        if self._mf_args.isolate:
+            main_path = os.path.join(self._mf_dir, self._mf_args.name)
+            os.mkdir(main_path)
+            with open(os.path.join(main_path, "main.tf"), "w") as f:
+                f.write(self._write())
+        else:
+            with open(f"{self._mf_args.name}.tf", "w") as f:
+                f.write(self._write())
