@@ -9,6 +9,7 @@ _RESOURCE = "resource"
 _PROPERTY = "property"
 _MAP = "map"
 _OUTPUT = "output"
+_PROVIDER = "provider"
 _GROUP_VALENCE = {
     _VARIABLE: 1,
     _DATA: 2,
@@ -17,6 +18,7 @@ _GROUP_VALENCE = {
     _PROPERTY: 1,
     _MAP: 0,
     _OUTPUT: 1,
+    _PROVIDER: 1,
 }
 _GROUPS = list(_GROUP_VALENCE.keys())
 
@@ -47,13 +49,14 @@ class Block:
         self,
         _group: str,
         *args: str,
+        _tomap: bool = True,
         **kwargs: Union[str, int, float, Block, bool, list, dict],
     ):
         self._group = _group
         self.group, self.group_abbrv, self.ids = self._group_id_reprs(_group, args)
         self.properties = kwargs
         self._max_elements = 4
-        self._tomap = True
+        self._tomap = _tomap
         self.dependencies = set()
         self._format_props()  # needs to run on start to capture all dependencies
 
