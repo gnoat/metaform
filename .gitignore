@@ -129,7 +129,3 @@ dmypy.json
 .pyre/
 
 # others
-*.ipynb
-*/*.tf.py
-test_folder
-test_folder/*
