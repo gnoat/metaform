@@ -20,7 +20,6 @@ _GROUP_VALENCE = {
     _OUTPUT: 1,
     _PROVIDER: 1,
 }
-_GROUPS = list(_GROUP_VALENCE.keys())
 
 
 class BlockError(Exception):
@@ -50,7 +49,7 @@ class Block:
         _group: str,
         *args: str,
         _tomap: bool = True,
-        **kwargs: Union[str, int, float, Block, bool, list, dict],
+        **kwargs: Union[str, int, float, Block, Caller, bool, dict, list],
     ):
         self._group = _group
         self.group, self.group_abbrv, self.ids = self._group_id_reprs(_group, args)
@@ -60,7 +59,7 @@ class Block:
         self.dependencies = set()
         self._format_props()  # needs to run on start to capture all dependencies
 
-    def _group_id_reprs(self, s: str, ids: tuple[str]) -> tuple[str, str, tuple[str]]:
+    def _group_id_reprs(self, s: str, ids: tuple[str]) -> tuple[str, str, tuple]:
         if (s == _MAP) and not ids:
             return "", "", ids
         elif s == _PROPERTY:
@@ -120,7 +119,7 @@ class Block:
     def __repr__(self) -> str:
         return ".".join([self.group_abbrv] + list(self.ids)).strip(".")
 
-    def _parse(self, s: Union[Caller, int, float, str, bool]) -> str:
+    def _parse(self, s: Union[str, int, float, Block, Caller, bool, dict, list]) -> str:
         if isinstance(s, Caller):
             return str(s)
         elif isinstance(s, int or float):
@@ -130,7 +129,7 @@ class Block:
         else:
             return f'"{s}"'
 
-    def __getitem__(self, attribute: str) -> str:
+    def __getitem__(self, attribute: str) -> Caller | str:
         return Caller(self, attribute)
 
     def _map_rep(self, d: dict, pad=0) -> list[str]:
