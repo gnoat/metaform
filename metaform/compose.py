@@ -1,4 +1,3 @@
-from itertools import filterfalse
 from blocks import (
     Block,
     BlockError,
@@ -9,12 +8,11 @@ from blocks import (
     _OUTPUT,
     _PROPERTY,
     _PROVIDER,
+    _MAP,
 )
 from typing import Union, Optional
 import functools
 import os
-from argparse import ArgumentParser
-
 
 
 class DependencyError(Exception):
@@ -100,28 +98,22 @@ class Group:
 class Providers:
     _ignore_duplicates = False
 
-    def __init__(self, provider: str, source: Optional[str] = None, version: Optional[str] = None, **kwargs):
-        self.provider = provider
-        self.source = source
-        self.version = version
-        self.properties = kwargs
-    
     def __init__(self, registry: Registry):
         self.registry = registry
         self.blocks = {}
         self.provider_options = {}
-    
+
     def __getitem__(self, provider_block_id: str) -> Block:
-        return self.provider_blocks[provider_block_id]
+        return self.blocks[provider_block_id]
 
     def _update_tracking(self, provider: str, source: Optional[str] = None, version: Optional[str] = None, **kwargs):
-        provider_block = Block("provider", provider, **kwargs)
+        provider_block = Block(_PROVIDER, provider, **kwargs)
         required_provider_params = {}
         if source:
             required_provider_params["source"] = source
-        elif version:
+        if version:
             required_provider_params["version"] = version
-        provider_options = Block("map", provider, _tomap=False, **required_provider_params)
+        provider_options = Block(_MAP, provider, _tomap=False, invisible_map = True, **required_provider_params)
         if (str(provider_block) not in self.registry) or self._ignore_duplicates:
             self.registry[str(provider_block)] = provider_block
         else:
@@ -129,12 +121,12 @@ class Providers:
                 f"Provider {provider} is already registered in the block registry."
             )
         self.provider_options[provider] = provider_options
-    
+
     def add(self, provider: str, source: Optional[str] = None, version: Optional[str] = None, **kwargs):
         self._update_tracking(provider, source, version, **kwargs)
-    
+
     def build_provider(self):
-        return Block("property", "terraform", _tomap=False, required_providers=Block("map", **self.required_provider_params))
+        return Block("property", "terraform", _tomap=False, required_providers=Block(_PROPERTY, "required_providers", **self.provider_options))
 
 
 class MetaFormer:
@@ -142,7 +134,7 @@ class MetaFormer:
         self,
         name: str = "main",
         isolate_module: bool = False,
-        split_out: bool = False,  
+        split_out: bool = False, # need for future use to choose to save as multiple tf files
         registry: Optional[Registry] = None,
     ):
         if registry is not None:
@@ -175,9 +167,9 @@ class MetaFormer:
         self.registry = Registry()
         return self
 
-    def _collect_dependencies(self) -> dict[str, list[str]]:
+    def _collect_dependencies(self) -> dict[str, set[str]]:
         return {
-            block_id: {str(dep_block) for dep_block in block.dependencies}
+            f"{block_id}": {str(dep_block) for dep_block in block.dependencies}
             for block_id, block in self.registry.items()
             if block._group != _PROPERTY
         }
