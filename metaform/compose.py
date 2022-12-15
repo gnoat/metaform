@@ -1,4 +1,4 @@
-from blocks import (
+from metaform.blocks import (
     Block,
     BlockError,
     _VARIABLE,
@@ -8,6 +8,7 @@ from blocks import (
     _OUTPUT,
     _PROPERTY,
     _PROVIDER,
+    _MAP,
 )
 from typing import Union, Optional
 import itertools
@@ -98,25 +99,13 @@ class Group:
 class Providers:
     _ignore_duplicates = False
 
-    def __init__(
-        self,
-        provider: str,
-        source: Optional[str] = None,
-        version: Optional[str] = None,
-        **kwargs,
-    ):
-        self.provider = provider
-        self.source = source
-        self.version = version
-        self.properties = kwargs
-
     def __init__(self, registry: Registry):
         self.registry = registry
         self.blocks = {}
         self.provider_options = {}
 
     def __getitem__(self, provider_block_id: str) -> Block:
-        return self.provider_blocks[provider_block_id]
+        return self.blocks[provider_block_id]
 
     def _update_tracking(
         self,
@@ -125,14 +114,14 @@ class Providers:
         version: Optional[str] = None,
         **kwargs,
     ):
-        provider_block = Block("provider", provider, **kwargs)
+        provider_block = Block(_PROVIDER, provider, **kwargs)
         required_provider_params = {}
         if source:
             required_provider_params["source"] = source
-        elif version:
+        if version:
             required_provider_params["version"] = version
         provider_options = Block(
-            "map", provider, _tomap=False, **required_provider_params
+            _MAP, provider, tomap=False, invisible_map=True, **required_provider_params
         )
         if (str(provider_block) not in self.registry) or self._ignore_duplicates:
             self.registry[str(provider_block)] = provider_block
@@ -155,19 +144,29 @@ class Providers:
         return Block(
             "property",
             "terraform",
-            _tomap=False,
-            required_providers=Block("map", **self.required_provider_params),
+            tomap=False,
+            required_providers=Block(
+                _PROPERTY, "required_providers", **self.provider_options
+            ),
         )
 
 
 class MetaFormer:
-    _COMPONENT_ORDER = [_PROPERTY, _VARIABLE, _DATA, _RESOURCE, _MODULE, _OUTPUT]
+    _COMPONENT_ORDER = [
+        _PROPERTY,
+        _PROVIDER,
+        _VARIABLE,
+        _DATA,
+        _RESOURCE,
+        _MODULE,
+        _OUTPUT,
+    ]
 
     def __init__(
         self,
         name: str = "main",
         isolate_module: bool = False,
-        split_out: bool = False,
+        split_out: bool = False,  # here to specify whether to split Metaform registry into multiple tf files
         registry: Optional[Registry] = None,
     ):
         if registry is not None:
@@ -210,7 +209,7 @@ class MetaFormer:
 
     def collect(self) -> list[Block]:
         dependencies = self._resolve_dependencies()
-        return functools.reduce(
+        return [self.provider.build_provider()] + functools.reduce(
             lambda m, n: self._sort(set(m)) + self._sort(set(n)), dependencies, []
         )
 

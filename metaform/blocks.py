@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, Union, Optional, Literal
+from typing import Any, Union, Optional
 
 
 _VARIABLE = "variable"
@@ -41,31 +41,39 @@ class Caller:
 
 
 class Block:
-    _tab_space = "    "
+    _tab_space = "  "
     _group_abbrv = {_VARIABLE: "var", _MAP: ""}
 
     def __init__(
         self,
         _group: str,
         *args: str,
-        _tomap: bool = True,
-        **kwargs: Union[str, int, float, Block, Caller, bool, dict, list],
+        tomap: bool = True,
+        invisible_map: bool = False,
+        **kwargs: Union[Caller, str, int, float, Block, bool, list, dict],
     ):
         self._group = _group
-        self.group, self.group_abbrv, self.ids = self._group_id_reprs(_group, args)
+        self.group, self.group_abbrv, self.ids = self._group_id_reprs(
+            _group, args, invisible_map
+        )
+        self.invisible_map = invisible_map
         self.properties = kwargs
         self._max_elements = 4
-        self._tomap = _tomap
+        self.tomap = tomap
         self.dependencies = set()
         self._format_props()  # needs to run on start to capture all dependencies
 
-    def _group_id_reprs(self, s: str, ids: tuple[str]) -> tuple[str, str, tuple]:
-        if (s == _MAP) and not ids:
-            return "", "", ids
+    def _group_id_reprs(
+        self, s: str, ids: tuple[str], invisible_map: bool = False
+    ) -> tuple[str, str, tuple[str]]:
+        if s == _MAP:
+            if not ids:
+                return "", "", ids
+            elif invisible_map:
+                return ids[0], "", tuple()
         elif s == _PROPERTY:
-            return ids[0], ids[0], ids[1:]
-        else:
-            return s, self._group_abbrv.get(s, s), ids
+            return ids[0], ids[0], tuple(ids[1:])
+        return s, self._group_abbrv.get(s, s), ids
 
     def _write_ids(self) -> str:
         return " ".join([self.group] + [f'"{id}"' for id in self.ids]).strip() + " "
@@ -74,8 +82,9 @@ class Block:
         """
         Creates a string block that translates Block to Terraform
         """
+        invis_map_insert = "= " if (self.invisible_map) else ""
         lines = [f"#{comment}"] if comment else []
-        lines.append(self._write_ids() + "{")
+        lines.append(self._write_ids() + invis_map_insert + "{")
         lines += self._format_props(pad)
         lines.append("}")
         return "\n".join(map(lambda s: pad * self._tab_space + s, lines))
@@ -84,7 +93,11 @@ class Block:
         """
         Returns a list of parameter lines
         """
-        max_len = max(len(k) for k in self.properties.keys())
+        max_len = (
+            max(len(k) for k in self.properties.keys())
+            if (self.properties.keys())
+            else 0
+        )
         basic_params = []
         property_params = []
         for k, v in self.properties.items():
@@ -134,7 +147,7 @@ class Block:
 
     def _map_rep(self, d: dict, pad=0) -> list[str]:
         dummy_block = Block(_MAP, **d)
-        if self._tomap:
+        if self.tomap:
             base = dummy_block._format_props(pad=pad + 6)
             base[0] = "tomap(" + base[0]
             base[-1] = base[-1] + ")"

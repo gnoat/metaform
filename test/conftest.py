@@ -12,7 +12,7 @@ def enter_module(file_from_root="metaform"):
 @pytest.fixture(scope="function")
 def tf():
     enter_module("metaform")
-    from compose import MetaFormer
+    from metaform.compose import MetaFormer
 
     return MetaFormer()
 
@@ -20,6 +20,6 @@ def tf():
 @pytest.fixture(scope="function")
 def compose():
     enter_module("metaform")
-    import compose
+    from metaform import compose
 
     return compose
