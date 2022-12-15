@@ -5,7 +5,7 @@ Metaform is a module and CLI tool for generating Terraform files in Python.  See
 ## Installation
 
 Clone the repository and run
-```bash
+```shell
 python3 setup.py develop
 ```
 to build the module and enable the CLI.
@@ -13,11 +13,11 @@ to build the module and enable the CLI.
 ## How to Use
 
 Once you have metaform installed on your machine and you've written a metaform script in Python, you can generate the Terraform file(s) by calling the `.build()` method of your Metaform class.  To enable automated generation for Metaform scripts, you can use the CLI command
-```bash
+```shell
 mf
 ```
 to build all scripts in the current directory with a `.tf.py` extension.  If you want to build all scripts in a specific directory, simply use
-```bash
+```shell
 mf --chdir ./directory_to_search
 ```
 
