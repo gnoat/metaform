@@ -12,7 +12,18 @@ to build the module and enable the CLI.
 
 ## How to Use
 
-Once you have metaform installed on your machine and you've written a metaform script in Python, you can generate the Terraform file(s) by calling the `.build()` method of your Metaform class.  To enable automated generation for Metaform scripts, you can use the CLI command
+Once you have metaform installed on your machine and you've written a metaform script in Python, you can generate the Terraform file(s) by calling the `.build()` method of your Metaform class as in the below example
+```python
+from metaform.compose import MetaFormer
+
+tf = MetaFormer()
+tf.provider.add("aws", source="hashicorp/aws", version="~>0.1", region="us-east-1a")
+kms_key = tf.data("aws_kms_key", key_id="alias/my-kms-key")
+s3_bucket = tf.resource("aws_s3_bucket", "my-bucket")
+
+tf.build()
+```
+To enable automated generation for Metaform scripts, you can use the CLI command
 ```shell
 mf
 ```
@@ -25,3 +36,4 @@ mf --chdir ./directory_to_search
 
 Now that there is a minimal working version, the next work planned is to create a Metaform module that allows you to read parameterized Metaform code from local files or GitHub repositories and execute it.
 
+Additionally, further customization for how to save the generated Terraform (single file, multiple files, modules, etc) are planned.  Right now Metaform will generate a single Terraform file for each MetaFormer registry you build.

@@ -1,9 +1,9 @@
 from metaform.compose import MetaFormer
 
 
-tf = MetaFormer(name = "metaform_example")
+tf = MetaFormer(name="metaform_example")
 host = tf.data("aws_ssm_parameter", "dbrx_host", name="dbrx_host")
-token = tf.data("aws_ssm_parameter", "dbrx_token", name="dbrx_token", path=host["name"])
+token = tf.data("aws_ssm_parameter", "dbrx_token", name="dbrx_token")
 tf.provider.add("aws", source="hashicorp/aws", version="~> 0.1", region="us-east-1a")
 tf.provider.add(
     "databricks",
@@ -19,8 +19,8 @@ job = tf.resource(
     "dbrx_job",
     library=libs,
     name="dbrx_job",
-    host=host["name"],
-    token=token["name"],
+    host=host["value"],
+    token=token["value"],
 )
 
 tf.build()

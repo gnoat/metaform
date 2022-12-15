@@ -18,5 +18,3 @@ def main():
         print("metaform 0.1.0")
     else:
         find_and_generate_metaf_files(args.chdir)
-
-
