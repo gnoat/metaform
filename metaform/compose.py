@@ -1,19 +1,19 @@
-from blocks import (
+from metaform.blocks import (
     Block,
     BlockError,
-    _GROUPS,
     _VARIABLE,
     _DATA,
     _MODULE,
     _RESOURCE,
     _OUTPUT,
     _PROPERTY,
+    _PROVIDER,
+    _MAP,
 )
 from typing import Union, Optional
+import itertools
 import functools
 import os
-from argparse import ArgumentParser
-from __main__ import __file__ as __script_path__
 
 
 class DependencyError(Exception):
@@ -96,61 +96,108 @@ class Group:
         return self._update_tracking_and_return(new_block)
 
 
+class Providers:
+    _ignore_duplicates = False
+
+    def __init__(self, registry: Registry):
+        self.registry = registry
+        self.blocks = {}
+        self.provider_options = {}
+
+    def __getitem__(self, provider_block_id: str) -> Block:
+        return self.blocks[provider_block_id]
+
+    def _update_tracking(
+        self,
+        provider: str,
+        source: Optional[str] = None,
+        version: Optional[str] = None,
+        **kwargs,
+    ):
+        provider_block = Block(_PROVIDER, provider, **kwargs)
+        required_provider_params = {}
+        if source:
+            required_provider_params["source"] = source
+        if version:
+            required_provider_params["version"] = version
+        provider_options = Block(
+            _MAP, provider, tomap=False, invisible_map=True, **required_provider_params
+        )
+        if (str(provider_block) not in self.registry) or self._ignore_duplicates:
+            self.registry[str(provider_block)] = provider_block
+        else:
+            raise BlockError(
+                f"Provider {provider} is already registered in the block registry."
+            )
+        self.provider_options[provider] = provider_options
+
+    def add(
+        self,
+        provider: str,
+        source: Optional[str] = None,
+        version: Optional[str] = None,
+        **kwargs,
+    ):
+        self._update_tracking(provider, source, version, **kwargs)
+
+    def build_provider(self):
+        return Block(
+            "property",
+            "terraform",
+            tomap=False,
+            required_providers=Block(
+                _PROPERTY, "required_providers", **self.provider_options
+            ),
+        )
+
+
 class MetaFormer:
+    _COMPONENT_ORDER = [
+        _PROPERTY,
+        _PROVIDER,
+        _VARIABLE,
+        _DATA,
+        _RESOURCE,
+        _MODULE,
+        _OUTPUT,
+    ]
+
     def __init__(
         self,
+        name: str = "main",
+        isolate_module: bool = False,
+        split_out: bool = False,  # here to specify whether to split Metaform registry into multiple tf files
         registry: Optional[Registry] = None,
-        default_name: Optional[str] = None,
-        default_isolate: bool = False,
-        default_split_out: bool = False,
     ):
         if registry is not None:
             self.registry = registry
         else:
             self.registry = Registry()
-        self._create_groups()
-        self._mf_dir = os.path.dirname(__script_path__)
-        self._mf_path = os.path.realpath(__script_path__)
-        self._default_name_arg = (
-            default_name
-            if default_name
-            else os.path.basename(self._mf_path).split(".")[0]
-        )
-        self._default_isolate_arg = "store_false" if default_isolate else "store_true"
-        self._default_split_out_arg = (
-            "store_false" if default_split_out else "store_true"
-        )
-        self._mf_args = self._parse_options()
+        self.name = name
+        self.isolate_module = isolate_module
 
-        # shortened aliases
-        self.dat = self.data
-        self.res = self.resource
-        self.mod = self.module
-        self.var = self.variable
-        self.pro = self.property
-
-    def _parse_options(self):
-        parser = ArgumentParser()
-        parser.add_argument("--name", "-n", type=str, default=self._default_name_arg)
-        parser.add_argument("--isolate", "-i", action=self._default_isolate_arg)
-        parser.add_argument("--split_out", "-s", action=self._default_split_out_arg)
-        args = parser.parse_args()
-        return args
-
-    def _create_groups(self):
+        # create major componenets
         self.data = Group("data", self.registry)
         self.resource = Group("resource", self.registry)
         self.module = Group("module", self.registry)
         self.variable = Group("variable", self.registry)
         self.property = Group("property", self.registry)
         self.output = Group("output", self.registry)
-        return self
+        self.provider = Providers(self.registry)
+
+        # shortened aliases
+        self.dat = self.data
+        self.res = self.resource
+        self.mod = self.module
+        self.var = self.variable
+        self.prop = self.property
+        self.prov = self.provider
 
     def _clear_registry(self):
         self.registry = Registry()
         return self
 
-    def _collect_dependencies(self) -> dict[str, list[str]]:
+    def _collect_dependencies(self) -> dict[str, set[str]]:
         return {
             block_id: {str(dep_block) for dep_block in block.dependencies}
             for block_id, block in self.registry.items()
@@ -162,30 +209,21 @@ class MetaFormer:
 
     def collect(self) -> list[Block]:
         dependencies = self._resolve_dependencies()
-        return functools.reduce(
-            lambda m, n: self._sort(m) + self._sort(n), dependencies, []
+        return [self.provider.build_provider()] + functools.reduce(
+            lambda m, n: self._sort(set(m)) + self._sort(set(n)), dependencies, []
         )
 
-    def _sort(self, deps: set[str]) -> list[Block]:
+    def _sort(self, deps: set[Block]) -> list[Block]:
         """
         Sort the dependencies putting in the following order:
             VARIABLES -> DATA -> RESOURCES -> MODULES -> OUTPUTS
         """
-        deps = [self.registry[str(block_id)] for block_id in deps]
-        return (
-            list(filter(lambda b: b._group == _VARIABLE, deps))
-            + list(filter(lambda b: b._group == _DATA, deps))
-            + list(filter(lambda b: b._group == _RESOURCE, deps))
-            + list(filter(lambda b: b._group == _MODULE, deps))
-            + list(filter(lambda b: b._group == _OUTPUT, deps))
-            + list(
-                filter(
-                    lambda b: b._group
-                    not in [_VARIABLE, _DATA, _RESOURCE, _MODULE, _OUTPUT],
-                    deps,
-                )
-            )
-        )
+        deps = {self.registry[str(block_id)] for block_id in deps}
+        ordered = [
+            list(filter(lambda b: b._group == comp, deps))
+            for comp in self._COMPONENT_ORDER
+        ] + [list(filter(lambda b: b._group not in self._COMPONENT_ORDER, deps))]
+        return list(itertools.chain(*ordered))
 
     def _write(self):
         """
@@ -197,11 +235,11 @@ class MetaFormer:
         """
         Build out the new terraform scripts from the metaform commands
         """
-        if self._mf_args.isolate:
-            main_path = os.path.join(self._mf_dir, self._mf_args.name)
+        if self.isolate_module:
+            main_path = os.path.join(os.path.realpath("__main__"), self.name)
             os.mkdir(main_path)
             with open(os.path.join(main_path, "main.tf"), "w") as f:
                 f.write(self._write())
         else:
-            with open(f"{self._mf_args.name}.tf", "w") as f:
+            with open(f"{self.name}.tf", "w") as f:
                 f.write(self._write())

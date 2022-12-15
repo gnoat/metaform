@@ -6,7 +6,7 @@ def test_data(tf):
     assert str(token) == "data.aws_ssm_parameter.token"
     assert (
         token._write()
-        == 'data "aws_ssm_parameter" "token" {\n    name = "workspace-token"\n    path = "/keys/"\n}'
+        == 'data "aws_ssm_parameter" "token" {\n  name = "workspace-token"\n  path = "/keys/"\n}'
     )
     assert tf.data.group == "data"
     assert (
@@ -17,7 +17,7 @@ def test_data(tf):
     assert str(host) == "data.aws_ssm_parameter.host"
     assert (
         host._write()
-        == 'data "aws_ssm_parameter" "host" {\n    name = "workspace-host"\n}'
+        == 'data "aws_ssm_parameter" "host" {\n  name = "workspace-host"\n}'
     )
     assert (
         str(tf.data.blocks)
@@ -32,7 +32,7 @@ def test_resources(tf):
     assert str(token) == "resource.aws_ssm_parameter.token"
     assert (
         token._write()
-        == 'resource "aws_ssm_parameter" "token" {\n    name = "workspace-token"\n    path = "/keys/"\n}'
+        == 'resource "aws_ssm_parameter" "token" {\n  name = "workspace-token"\n  path = "/keys/"\n}'
     )
     assert tf.resource.group == "resource"
     assert (
@@ -43,7 +43,7 @@ def test_resources(tf):
     assert str(host) == "resource.aws_ssm_parameter.host"
     assert (
         host._write()
-        == 'resource "aws_ssm_parameter" "host" {\n    name = "workspace-host"\n}'
+        == 'resource "aws_ssm_parameter" "host" {\n  name = "workspace-host"\n}'
     )
     assert (
         str(tf.resource.blocks)
@@ -55,7 +55,7 @@ def test_module(tf):
     test = tf.module("generic_resources", source="./generic_module")
     assert (
         test._write()
-        == 'module "generic_resources" {\n    source = "./generic_module"\n}'
+        == 'module "generic_resources" {\n  source = "./generic_module"\n}'
     )
     assert str(test) == "module.generic_resources"
 
@@ -77,7 +77,7 @@ def test_stacking_blocks(tf):
     assert str(job) == "resource.databricks_job.dbrx_job"
     assert (
         job._write()
-        == """resource "databricks_job" "dbrx_job" {\n    name    = "dbrx_job"\n    host    = data.aws_ssm_parameter.dbrx_host.name\n    token   = data.aws_ssm_parameter.dbrx_token.name\n    library {\n        location    = "s3://bucket"\n        entry_point = "src.main"\n    }\n}"""
+        == """resource "databricks_job" "dbrx_job" {\n  name    = "dbrx_job"\n  host    = data.aws_ssm_parameter.dbrx_host.name\n  token   = data.aws_ssm_parameter.dbrx_token.name\n  library {\n    location    = "s3://bucket"\n    entry_point = "src.main"\n  }\n}"""
     )
 
 
@@ -101,7 +101,9 @@ def test_metaformer_registry(tf):
         "library",
         "resource.databricks_job.dbrx_job",
     }
-    assert tf.collect() == [host, token, job]
+    assert set(
+        filter(lambda s: ("data" in str(s)) or ("resource" in str(s)), tf.collect())
+    ) == {host, token, job}
 
 
 def test_resolve_dependencies(compose):
